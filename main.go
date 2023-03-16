@@ -4,17 +4,20 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	//"errors"
+	//  "errors"
 	"fmt"
 	"log"
 	"net/http"
 
+	
+	"github.com/go-mysql/errors"
 	_ "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var user_db *sql.DB
 var err error
+
 
 type User struct {
 	Username string `json:"u_name"`
@@ -53,43 +56,31 @@ func sign_up(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
-		fmt.Println("Failed to parse input data")
+		fmt.Println("Failed to parse input data", err)
 		return
 	}
 
-	bal, _ := user_db.Query("select username from users where username=? ", user.Username)
-	var bal2 string
-
-	for bal.Next() {
-		e := bal.Scan(&bal2)
-		if e != nil {
-			fmt.Println("there is an error", e)
-			return
-		}
-	}
-    
 	
-	if bal2 != user.Username {
-		pwd := []byte(user.Password)
-		hash := hashAndSalt(pwd)
-		user.Password = hash
+	pwd := []byte(user.Password)
+	hash := hashAndSalt(pwd)
+	user.Password = hash
 
-		query1 := "INSERT INTO  users (Username,Password) VALUES (?,?)"
-		_, err = user_db.Exec(query1, user.Username, user.Password)
+	query1 := "INSERT INTO  users (Username,Password) VALUES (?,?)"
+	_, err1 := user_db.Query(query1, user.Username, user.Password)
 
-		if err != nil {
-			fmt.Println("Failed to insert data into the database ", err)
-			return
-		} else {
-			fmt.Println("data successfully inserted in the database")
+	
+
+	if err1 != nil {
+		
+		errorcode := errors.MySQLErrorCode(err1)
+		if errorcode==1062{
+			fmt.Println("username already present,change it and try again ",err1.Error())
 		}
-
-		z := "sign up is successful"
-		json.NewEncoder(w).Encode(z)
+		return
 
 	} else {
-		z := "sign up is not possible as there is already a user with this username, kindly change the username name and try again  "
-		json.NewEncoder(w).Encode(z)
+		fmt.Println("data successfully inserted into the database")
+		json.NewEncoder(w).Encode("sign up : successful")
 	}
 
 }
@@ -99,36 +90,34 @@ func log_in(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&user2)
 
 	var bal2 User2
-	bal, e := user_db.Query("select username, password from users where username=?",user2.Username)
+	bal, e := user_db.Query("select username, password from users where username=?", user2.Username)
 
 	if e != nil {
 		fmt.Println("error in selecting username from database ", e)
+		return
 	}
 	for bal.Next() {
 		scan_errr := bal.Scan(&bal2.Username, &bal2.Password2)
 		if scan_errr != nil {
 			fmt.Println("error in scan", scan_errr)
 		}
-		
 
 	}
 
 	z := []byte(user2.Password2)
 
+	m := comparePasswords(bal2.Password2, z)
 
-	m:=comparePasswords(bal2.Password2,z)
-
-	if user2.Username==bal2.Username && m{
-		    q:="successsful log in "
-	   	json.NewEncoder(w).Encode(q)
-	}else{
-		if(user2.Username!=bal2.Username){
-	  	json.NewEncoder(w).Encode("invalid username")
-	  }else{
+	if user2.Username == bal2.Username && m {
+		json.NewEncoder(w).Encode("successsful log in ")
+	} else {
+		if user2.Username != bal2.Username {
+			json.NewEncoder(w).Encode("invalid username")
+		} else {
 			json.NewEncoder(w).Encode("invalid password")
-		 }
+		}
 
-	 }
+	}
 }
 
 func main() {
